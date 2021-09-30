@@ -14,6 +14,7 @@ import org.opalj.br.ReferenceType
 import org.opalj.br.Type
 import org.opalj.br.VoidType
 import org.opalj.br.analyses.SomeProject
+import org.opalj.tac.fpcf.properties.cg.Context
 
 object TypesUtil {
 

@@ -12,8 +12,8 @@ import org.opalj.br.analyses.ProjectInformationKeys
 import org.opalj.br.analyses.SomeProject
 import org.opalj.br.fpcf.BasicFPCFTriggeredAnalysisScheduler
 import org.opalj.br.fpcf.FPCFAnalysis
-import org.opalj.br.fpcf.properties.cg.Callers
-import org.opalj.br.fpcf.properties.cg.InstantiatedTypes
+import org.opalj.tac.fpcf.properties.cg.Callers
+import org.opalj.tac.fpcf.properties.cg.InstantiatedTypes
 import org.opalj.br.instructions.CreateNewArrayInstruction
 import org.opalj.collection.immutable.UIDSet
 import org.opalj.fpcf.EPS
@@ -25,6 +25,8 @@ import org.opalj.fpcf.PropertyStore
 import org.opalj.fpcf.Results
 import org.opalj.tac.fpcf.properties.TACAI
 import scala.collection.mutable
+
+import org.opalj.tac.cg.CallGraphKey
 
 /**
  * Updates InstantiatedTypes attached to a method's set for each array allocation
@@ -39,8 +41,9 @@ import scala.collection.mutable
  * @author Andreas Bauer
  */
 final class ArrayInstantiationsAnalysis(
-        val project:     SomeProject,
-        selectSetEntity: TypeSetEntitySelector
+        val project:                              SomeProject,
+        final override implicit val typeProvider: TypeProvider,
+        selectSetEntity:                          TypeSetEntitySelector
 ) extends ReachableMethodAnalysis {
 
     override def processMethod(
@@ -115,10 +118,12 @@ class ArrayInstantiationsAnalysisScheduler(
         selectSetEntity: TypeSetEntitySelector
 ) extends BasicFPCFTriggeredAnalysisScheduler {
 
-    override def requiredProjectInformation: ProjectInformationKeys = Seq.empty
+    override def requiredProjectInformation: ProjectInformationKeys =
+        CallGraphKey.typeProvider.requiredProjectInformationKeys
 
     override def register(project: SomeProject, propertyStore: PropertyStore, i: Null): FPCFAnalysis = {
-        val analysis = new ArrayInstantiationsAnalysis(project, selectSetEntity)
+        val analysis =
+            new ArrayInstantiationsAnalysis(project, CallGraphKey.typeProvider, selectSetEntity)
         propertyStore.registerTriggeredComputation(Callers.key, analysis.analyze)
         analysis
     }

@@ -25,8 +25,8 @@ import org.opalj.br.fpcf.BasicFPCFEagerAnalysisScheduler
 import org.opalj.br.ArrayType
 import org.opalj.br.MethodDescriptor
 import org.opalj.br.ObjectType
-import org.opalj.br.fpcf.properties.cg.Callees
-import org.opalj.br.fpcf.properties.cg.Callers
+import org.opalj.tac.fpcf.properties.cg.Callees
+import org.opalj.tac.fpcf.properties.cg.Callers
 import org.opalj.br.ReferenceType
 import org.opalj.br.analyses.ProjectInformationKeys
 import org.opalj.br.analyses.VirtualFormalParametersKey
@@ -51,14 +51,15 @@ import org.opalj.tac.fpcf.properties.TheTACAI
  * @author Dominik Helm
  */
 class DoPrivilegedMethodAnalysis private[cg] (
-        final val doPrivilegedMethod: DeclaredMethod,
-        final val declaredRunMethod:  DeclaredMethod,
-        override val project:         SomeProject,
-        override val typeProvider:    TypeProvider
+        final val doPrivilegedMethod:       DeclaredMethod,
+        final val declaredRunMethod:        DeclaredMethod,
+        override val project:               SomeProject,
+        override implicit val typeProvider: TypeProvider
 ) extends TACAIBasedAPIBasedAnalysis with TypeConsumerAnalysis {
 
     override def processNewCaller(
-        callContext:     ContextType,
+        calleeContext:   ContextType,
+        callerContext:   ContextType,
         callPC:          Int,
         tac:             TACode[TACMethodParameter, V],
         receiverOption:  Option[Expr[V]],
@@ -72,7 +73,7 @@ class DoPrivilegedMethodAnalysis private[cg] (
             val param = params.head.get.asVar
 
             implicit val state: CGState[ContextType] = new CGState[ContextType](
-                callContext, FinalEP(callContext.method.definedMethod, TheTACAI(tac))
+                callerContext, FinalEP(callerContext.method.definedMethod, TheTACAI(tac))
             )
 
             val thisActual = persistentUVar(param)(state.tac.stmts)
@@ -80,14 +81,14 @@ class DoPrivilegedMethodAnalysis private[cg] (
             typeProvider.foreachType(
                 param,
                 typeProvider.typesProperty(
-                    param, callContext, callPC.asInstanceOf[Entity], tac.stmts
+                    param, callerContext, callPC.asInstanceOf[Entity], tac.stmts
                 )
-            ) { tpe ⇒ handleType(tpe, callContext, callPC, thisActual, indirectCalls) }
+            ) { tpe ⇒ handleType(tpe, callerContext, callPC, thisActual, indirectCalls) }
 
             returnResult(param, thisActual, indirectCalls)
         } else {
             indirectCalls.addIncompleteCallSite(callPC)
-            Results(indirectCalls.partialResults(callContext.method))
+            Results(indirectCalls.partialResults(callerContext))
         }
     }
 
@@ -97,7 +98,7 @@ class DoPrivilegedMethodAnalysis private[cg] (
         calls:      IndirectCalls
     )(implicit state: CGState[ContextType]): ProperPropertyComputationResult = {
 
-        val partialResults = calls.partialResults(state.callContext.method)
+        val partialResults = calls.partialResults(state.callContext)
         if (state.hasOpenDependencies)
             Results(
                 InterimPartialResult(state.dependees, c(state, thisVar, thisActual)),
@@ -122,7 +123,13 @@ class DoPrivilegedMethodAnalysis private[cg] (
         )
         if (callR.hasValue) {
             val tgtMethod = declaredMethods(callR.value)
-            calleesAndCallers.addCall(callContext, callPC, tgtMethod, Seq.empty, thisActual)
+            calleesAndCallers.addCall(
+                callContext,
+                callPC,
+                typeProvider.expandContext(callContext, tgtMethod, callPC),
+                Seq.empty,
+                thisActual
+            )
         } else {
             calleesAndCallers.addIncompleteCallSite(callPC)
         }

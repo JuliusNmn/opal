@@ -24,8 +24,9 @@ import org.opalj.br.analyses.DeclaredMethods
 import org.opalj.br.analyses.DeclaredMethodsKey
 import org.opalj.br.analyses.ProjectInformationKeys
 import org.opalj.br.fpcf.BasicFPCFEagerAnalysisScheduler
-import org.opalj.br.fpcf.properties.cg.Callees
-import org.opalj.br.fpcf.properties.cg.Callers
+import org.opalj.tac.fpcf.properties.cg.Callees
+import org.opalj.tac.fpcf.properties.cg.Callers
+import org.opalj.tac.cg.CallGraphKey
 import org.opalj.tac.fpcf.analyses.pointsto.TamiFlexKey
 import org.opalj.tac.fpcf.properties.TACAI
 
@@ -36,7 +37,8 @@ import org.opalj.tac.fpcf.properties.TACAI
  * @author Florian Kuebler
  */
 class TamiFlexCallGraphAnalysis private[analyses] (
-        final val project: SomeProject
+        final val project:      SomeProject,
+        final val typeProvider: TypeProvider
 ) extends FPCFAnalysis {
 
     val declaredMethods: DeclaredMethods = project.get(DeclaredMethodsKey)
@@ -55,7 +57,8 @@ class TamiFlexCallGraphAnalysis private[analyses] (
                         RefArray(ObjectType.Object, ArrayType.ArrayOfObject), ObjectType.Object
                     )
                 ),
-                "Method.invoke"
+                "Method.invoke",
+                typeProvider
             ),
             new TamiFlexMethodInvokeAnalysis(
                 project,
@@ -66,7 +69,8 @@ class TamiFlexCallGraphAnalysis private[analyses] (
                     "newInstance",
                     MethodDescriptor.JustReturnsObject
                 ),
-                "Class.newInstance"
+                "Class.newInstance",
+                typeProvider
             ),
             new TamiFlexMethodInvokeAnalysis(
                 project,
@@ -77,7 +81,8 @@ class TamiFlexCallGraphAnalysis private[analyses] (
                     "newInstance",
                     MethodDescriptor(ArrayType.ArrayOfObject, ObjectType.Object)
                 ),
-                "Constructor.newInstance"
+                "Constructor.newInstance",
+                typeProvider
             )
         )
         Results(analyses.map(_.registerAPIMethod()))
@@ -85,13 +90,17 @@ class TamiFlexCallGraphAnalysis private[analyses] (
 }
 
 class TamiFlexMethodInvokeAnalysis private[analyses] (
-        final val project: SomeProject, override val apiMethod: DeclaredMethod, val key: String
+        final val project:                        SomeProject,
+        override val apiMethod:                   DeclaredMethod,
+        val key:                                  String,
+        final override implicit val typeProvider: TypeProvider
 ) extends TACAIBasedAPIBasedAnalysis {
 
     final private[this] val tamiFlexLogData = project.get(TamiFlexKey)
 
     override def processNewCaller(
-        callContext:     ContextType,
+        calleeContext:   ContextType,
+        callerContext:   ContextType,
         pc:              Int,
         tac:             TACode[TACMethodParameter, V],
         receiverOption:  Option[Expr[V]],
@@ -102,11 +111,11 @@ class TamiFlexMethodInvokeAnalysis private[analyses] (
         implicit val indirectCalls: IndirectCalls = new IndirectCalls()
 
         if (receiverOption.isDefined)
-            handleMethodInvoke(callContext, pc, receiverOption.get, params, tac)
+            handleMethodInvoke(callerContext, pc, receiverOption.get, params, tac)
         else
             indirectCalls.addIncompleteCallSite(pc)
 
-        Results(indirectCalls.partialResults(callContext.method))
+        Results(indirectCalls.partialResults(callerContext))
     }
 
     private[this] def handleMethodInvoke(
@@ -145,7 +154,7 @@ class TamiFlexMethodInvokeAnalysis private[analyses] (
             indirectCalls.addCall(
                 context,
                 pc,
-                target,
+                typeProvider.expandContext(context, target, pc),
                 persistentMethodInvokeActualParams,
                 persistentMethodInvokeReceiver
             )
@@ -156,7 +165,8 @@ class TamiFlexMethodInvokeAnalysis private[analyses] (
 object TamiFlexCallGraphAnalysisScheduler extends BasicFPCFEagerAnalysisScheduler {
 
     override def requiredProjectInformation: ProjectInformationKeys =
-        Seq(DeclaredMethodsKey, TamiFlexKey)
+        Seq(DeclaredMethodsKey, TamiFlexKey) ++
+            CallGraphKey.typeProvider.requiredProjectInformationKeys
 
     override def uses: Set[PropertyBounds] = PropertyBounds.ubs(
         Callers,
@@ -170,7 +180,7 @@ object TamiFlexCallGraphAnalysisScheduler extends BasicFPCFEagerAnalysisSchedule
     )
 
     override def start(p: SomeProject, ps: PropertyStore, unused: Null): FPCFAnalysis = {
-        val analysis = new TamiFlexCallGraphAnalysis(p)
+        val analysis = new TamiFlexCallGraphAnalysis(p, CallGraphKey.typeProvider)
         ps.scheduleEagerComputationForEntity(p)(analysis.process)
         analysis
     }

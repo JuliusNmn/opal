@@ -43,9 +43,9 @@ import org.opalj.br.analyses.DeclaredMethodsKey
 import org.opalj.br.BooleanType
 import org.opalj.br.analyses.ProjectInformationKeys
 import org.opalj.br.fpcf.BasicFPCFEagerAnalysisScheduler
-import org.opalj.br.fpcf.properties.cg.Callees
-import org.opalj.br.fpcf.properties.cg.Callers
-import org.opalj.br.fpcf.properties.cg.LoadedClasses
+import org.opalj.tac.fpcf.properties.cg.Callees
+import org.opalj.tac.fpcf.properties.cg.Callers
+import org.opalj.tac.fpcf.properties.cg.LoadedClasses
 import org.opalj.br.analyses.ProjectIndexKey
 import org.opalj.tac.cg.CallGraphKey
 import org.opalj.tac.fpcf.analyses.cg.reflection.MatcherUtil.retrieveSuitableMatcher
@@ -85,7 +85,7 @@ sealed trait ReflectionAnalysis extends TACAIBasedAPIBasedAnalysis {
             indirectCalls.addCall(
                 callContext,
                 callPC,
-                declaredMethods(m),
+                typeProvider.expandContext(callContext, declaredMethods(m), callPC),
                 actualParams,
                 actualReceiver
             )
@@ -133,7 +133,7 @@ class ClassForNameAnalysis private[analyses] (
                         None
 
                 case EPK(p, _) ⇒
-                    Some(InterimEUBP(p, org.opalj.br.fpcf.properties.cg.LoadedClasses(newLoadedClasses)))
+                    Some(InterimEUBP(p, LoadedClasses(newLoadedClasses)))
 
                 case r ⇒ throw new IllegalStateException(s"unexpected previous result $r")
             })
@@ -141,7 +141,8 @@ class ClassForNameAnalysis private[analyses] (
     }
 
     override def processNewCaller(
-        callContext:     ContextType,
+        calleeContext:   ContextType,
+        callerContext:   ContextType,
         callPC:          Int,
         tac:             TACode[TACMethodParameter, V],
         receiverOption:  Option[Expr[V]],
@@ -150,12 +151,12 @@ class ClassForNameAnalysis private[analyses] (
         isDirect:        Boolean
     ): ProperPropertyComputationResult = {
         implicit val incompleteCallSites: IncompleteCallSites = new IncompleteCallSites {}
-        implicit val state: State = new State(tac.stmts, loadedClassesUB(), callContext)
+        implicit val state: State = new State(tac.stmts, loadedClassesUB(), callerContext)
 
         val className = if (params.nonEmpty) params(classNameIndex) else None
 
         if (className.isDefined) {
-            handleForName(className.get, callContext, callPC, tac.stmts)
+            handleForName(className.get, callerContext, callPC, tac.stmts)
         } else {
             failure(callPC)
         }
@@ -167,7 +168,7 @@ class ClassForNameAnalysis private[analyses] (
         className: Option[Expr[V]], incompleteCallSites: IncompleteCallSites
     )(implicit state: State): ProperPropertyComputationResult = {
         val iresults: TraversableOnce[ProperPropertyComputationResult] =
-            incompleteCallSites.partialResults(state.callContext.method)
+            incompleteCallSites.partialResults(state.callContext)
         val results = if (state.hasNewLoadedClasses) {
             val r = Iterator(state.loadedClassesPartialResult) ++ iresults
             state.reset()
@@ -262,7 +263,8 @@ class ClassNewInstanceAnalysis private[analyses] (
         )
 
     override def processNewCaller(
-        callContext:     ContextType,
+        calleeContext:   ContextType,
+        callerContext:   ContextType,
         callPC:          Int,
         tac:             TACode[TACMethodParameter, V],
         receiverOption:  Option[Expr[V]],
@@ -272,11 +274,11 @@ class ClassNewInstanceAnalysis private[analyses] (
     ): ProperPropertyComputationResult = {
         implicit val indirectCalls: IndirectCalls = new IndirectCalls()
         implicit val state: CGState[ContextType] = new CGState[ContextType](
-            callContext, FinalEP(callContext.method.definedMethod, TheTACAI(tac))
+            callerContext, FinalEP(callerContext.method.definedMethod, TheTACAI(tac))
         )
 
         if (receiverOption.isDefined) {
-            handleNewInstance(callContext, callPC, receiverOption.get, tac.stmts)
+            handleNewInstance(callerContext, callPC, receiverOption.get, tac.stmts)
         } else {
             failure(callPC)
         }
@@ -287,7 +289,7 @@ class ClassNewInstanceAnalysis private[analyses] (
     def returnResult(
         className: Option[Expr[V]], indirectCalls: IndirectCalls
     )(implicit state: CGState[ContextType]): ProperPropertyComputationResult = {
-        val results = indirectCalls.partialResults(state.callContext.method)
+        val results = indirectCalls.partialResults(state.callContext)
         if (state.hasOpenDependencies)
             Results(
                 InterimPartialResult(state.dependees, c(className, state)),
@@ -404,7 +406,8 @@ class ConstructorNewInstanceAnalysis private[analyses] (
     )
 
     override def processNewCaller(
-        callContext:     ContextType,
+        calleeContext:   ContextType,
+        callerContext:   ContextType,
         callPC:          Int,
         tac:             TACode[TACMethodParameter, V],
         receiverOption:  Option[Expr[V]],
@@ -415,22 +418,24 @@ class ConstructorNewInstanceAnalysis private[analyses] (
         implicit val indirectCalls: IndirectCalls = new IndirectCalls()
 
         implicit val state: CGState[ContextType] = new CGState[ContextType](
-            callContext, FinalEP(callContext.method.definedMethod, TheTACAI(tac))
+            callerContext, FinalEP(callerContext.method.definedMethod, TheTACAI(tac))
         )
 
         if (receiverOption.isDefined) {
-            handleConstructorNewInstance(callContext, callPC, receiverOption.get, params, tac.stmts)
+            handleConstructorNewInstance(
+                callerContext, callPC, receiverOption.get, params, tac.stmts
+            )
             returnResult(receiverOption.get, indirectCalls)
         } else {
             indirectCalls.addIncompleteCallSite(callPC)
-            Results(indirectCalls.partialResults(callContext.method))
+            Results(indirectCalls.partialResults(callerContext))
         }
     }
 
     def returnResult(
         constructor: Expr[V], indirectCalls: IndirectCalls
     )(implicit state: CGState[ContextType]): ProperPropertyComputationResult = {
-        val results = indirectCalls.partialResults(state.callContext.method)
+        val results = indirectCalls.partialResults(state.callContext)
         if (state.hasOpenDependencies)
             Results(
                 InterimPartialResult(state.dependees, c(constructor, state)),
@@ -614,7 +619,8 @@ class MethodInvokeAnalysis private[analyses] (
     )
 
     override def processNewCaller(
-        callContext:     ContextType,
+        calleeContext:   ContextType,
+        callerContext:   ContextType,
         callPC:          Int,
         tac:             TACode[TACMethodParameter, V],
         receiverOption:  Option[Expr[V]],
@@ -625,22 +631,22 @@ class MethodInvokeAnalysis private[analyses] (
         implicit val indirectCalls: IndirectCalls = new IndirectCalls()
 
         implicit val state: CGState[ContextType] = new CGState[ContextType](
-            callContext, FinalEP(callContext.method.definedMethod, TheTACAI(tac))
+            callerContext, FinalEP(callerContext.method.definedMethod, TheTACAI(tac))
         )
 
         if (receiverOption.isDefined) {
-            handleMethodInvoke(callContext, callPC, receiverOption.get, params, tac.stmts)
+            handleMethodInvoke(callerContext, callPC, receiverOption.get, params, tac.stmts)
             returnResult(receiverOption.get, indirectCalls)
         } else {
             indirectCalls.addIncompleteCallSite(callPC)
-            Results(indirectCalls.partialResults(callContext.method))
+            Results(indirectCalls.partialResults(callerContext))
         }
     }
 
     def returnResult(
         methodVar: Expr[V], indirectCalls: IndirectCalls
     )(implicit state: CGState[ContextType]): ProperPropertyComputationResult = {
-        val results = indirectCalls.partialResults(state.callContext.method)
+        val results = indirectCalls.partialResults(state.callContext)
         if (state.hasOpenDependencies)
             Results(
                 InterimPartialResult(state.dependees, c(methodVar, state)),
@@ -878,7 +884,8 @@ class MethodHandleInvokeAnalysis private[analyses] (
 ) extends ReflectionAnalysis with TypeConsumerAnalysis {
 
     override def processNewCaller(
-        callContext:     ContextType,
+        calleeContext:   ContextType,
+        callerContext:   ContextType,
         callPC:          Int,
         tac:             TACode[TACMethodParameter, V],
         receiverOption:  Option[Expr[V]],
@@ -889,7 +896,7 @@ class MethodHandleInvokeAnalysis private[analyses] (
         implicit val indirectCalls: IndirectCalls = new IndirectCalls()
 
         implicit val state: CGState[ContextType] = new CGState[ContextType](
-            callContext, FinalEP(callContext.method.definedMethod, TheTACAI(tac))
+            callerContext, FinalEP(callerContext.method.definedMethod, TheTACAI(tac))
         )
 
         if (receiverOption.isDefined) {
@@ -902,7 +909,7 @@ class MethodHandleInvokeAnalysis private[analyses] (
                 None
             }
             handleMethodHandleInvoke(
-                callContext,
+                callerContext,
                 callPC,
                 receiverOption.get,
                 params,
@@ -913,14 +920,14 @@ class MethodHandleInvokeAnalysis private[analyses] (
             returnResult(receiverOption.get, indirectCalls)
         } else {
             indirectCalls.addIncompleteCallSite(callPC)
-            Results(indirectCalls.partialResults(callContext.method))
+            Results(indirectCalls.partialResults(callerContext))
         }
     }
 
     def returnResult(
         methodHandle: Expr[V], indirectCalls: IndirectCalls
     )(implicit state: CGState[ContextType]): ProperPropertyComputationResult = {
-        val results = indirectCalls.partialResults(state.callContext.method)
+        val results = indirectCalls.partialResults(state.callContext)
         if (state.hasOpenDependencies)
             Results(
                 InterimPartialResult(state.dependees, c(methodHandle, state)),
@@ -1210,7 +1217,7 @@ class MethodHandleInvokeAnalysis private[analyses] (
             indirectCalls.addCall(
                 callContext,
                 callPC,
-                declaredMethods(m),
+                typeProvider.expandContext(callContext, declaredMethods(m), callPC),
                 // TODO: is this sufficient?
                 params,
                 receiver
@@ -1362,7 +1369,8 @@ class ReflectionRelatedCallsAnalysis private[analyses] (
 object ReflectionRelatedCallsAnalysisScheduler extends BasicFPCFEagerAnalysisScheduler {
 
     override def requiredProjectInformation: ProjectInformationKeys =
-        Seq(DeclaredMethodsKey, ProjectIndexKey)
+        Seq(DeclaredMethodsKey, ProjectIndexKey) ++
+            CallGraphKey.typeProvider.requiredProjectInformationKeys
 
     override def uses: Set[PropertyBounds] = PropertyBounds.ubs(
         Callers,

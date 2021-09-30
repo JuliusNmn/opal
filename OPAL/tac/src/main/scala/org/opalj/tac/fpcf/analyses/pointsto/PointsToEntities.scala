@@ -5,8 +5,8 @@ package fpcf
 package analyses
 package pointsto
 
-import org.opalj.br.DeclaredMethod
 import org.opalj.tac.common.DefinitionSite
+import org.opalj.tac.fpcf.properties.cg.Context
 
 /**
  * Special entities, that are only used in the points-to analysis context.
@@ -15,7 +15,7 @@ import org.opalj.tac.common.DefinitionSite
  * @author Florian Kuebler
  */
 case class ArrayEntity[ElementType](element: ElementType)
-case class MethodExceptions(dm: DeclaredMethod)
+case class MethodExceptions(context: Context)
 case class CallExceptions(defSite: DefinitionSite)
 
 object UnsafeFakeField

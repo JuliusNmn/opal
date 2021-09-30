@@ -9,6 +9,7 @@ import org.opalj.tac.common.DefinitionSiteLike
 import org.opalj.br.DefinedMethod
 import org.opalj.br.analyses.VirtualFormalParameter
 import org.opalj.br.fpcf.properties.EscapeViaAbnormalReturn
+import org.opalj.tac.fpcf.properties.cg.Context
 
 /**
  * Handling for exceptions, that are allocated within the current method.
@@ -35,14 +36,14 @@ trait ExceptionAwareEscapeAnalysis extends AbstractEscapeAnalysis {
             for (pc ← successors) {
                 if (pc.isCatchNode) {
                     val exceptionType = context.entity match {
-                        case defSite: DefinitionSiteLike ⇒
+                        case (_: Context, defSite: DefinitionSiteLike) ⇒
                             val Assignment(_, left, _) = tacai.stmts.find(_.pc == defSite.pc).get
                             classHierarchy.joinReferenceTypesUntilSingleUpperBound(
                                 left.value.asReferenceValue.upperTypeBound
                             )
-                        case VirtualFormalParameter(dm: DefinedMethod, -1) ⇒
+                        case (_: Context, VirtualFormalParameter(dm: DefinedMethod, -1)) ⇒
                             dm.definedMethod.classFile.thisType
-                        case VirtualFormalParameter(callee, origin) ⇒
+                        case (_: Context, VirtualFormalParameter(callee, origin)) ⇒
                             // we would not end in this case if the parameter is not an object
                             callee.descriptor.parameterTypes(-2 - origin).asObjectType
                     }

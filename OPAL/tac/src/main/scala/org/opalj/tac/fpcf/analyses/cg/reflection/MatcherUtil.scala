@@ -11,6 +11,7 @@ import org.opalj.fpcf.PropertyStore
 import org.opalj.br.ObjectType
 import org.opalj.br.analyses.SomeProject
 import org.opalj.br.FieldTypes
+import org.opalj.tac.fpcf.properties.cg.Context
 
 object MatcherUtil {
 

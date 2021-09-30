@@ -9,6 +9,7 @@ package reflection
 import org.opalj.fpcf.Entity
 import org.opalj.fpcf.PropertyStore
 import org.opalj.br.ObjectType
+import org.opalj.tac.fpcf.properties.cg.Context
 
 object StringUtil {
 

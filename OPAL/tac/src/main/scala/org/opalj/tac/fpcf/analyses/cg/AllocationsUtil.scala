@@ -12,6 +12,8 @@ import org.opalj.fpcf.PropertyStore
 import org.opalj.fpcf.SomeEPS
 import org.opalj.br.Method
 import org.opalj.br.ReferenceType
+import org.opalj.tac.fpcf.properties.cg.Context
+import org.opalj.tac.fpcf.properties.cg.NoContext
 import org.opalj.tac.fpcf.properties.TACAI
 
 object AllocationsUtil {

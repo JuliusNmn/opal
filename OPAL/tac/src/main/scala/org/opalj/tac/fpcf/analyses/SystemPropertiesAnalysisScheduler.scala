@@ -25,13 +25,17 @@ import org.opalj.br.analyses.SomeProject
 import org.opalj.br.fpcf.BasicFPCFTriggeredAnalysisScheduler
 import org.opalj.br.analyses.DeclaredMethodsKey
 import org.opalj.br.analyses.ProjectInformationKeys
-import org.opalj.br.fpcf.properties.cg.Callers
+import org.opalj.tac.fpcf.properties.cg.Callers
+import org.opalj.tac.cg.CallGraphKey
 import org.opalj.tac.fpcf.analyses.cg.ReachableMethodAnalysis
+import org.opalj.tac.fpcf.analyses.cg.TypeProvider
 import org.opalj.tac.fpcf.properties.TACAI
 
 class SystemPropertiesAnalysisScheduler private[analyses] (
-        final val project: SomeProject
+        final val project:                        SomeProject,
+        final override implicit val typeProvider: TypeProvider
 ) extends ReachableMethodAnalysis {
+
     def processMethod(
         callContext: ContextType, tacaiEP: EPS[Method, TACAI]
     ): ProperPropertyComputationResult = {
@@ -91,7 +95,7 @@ class SystemPropertiesAnalysisScheduler private[analyses] (
                 SystemProperties.key,
                 update,
                 Set(tacaiEP),
-                continuationForTAC(callContext)
+                continuationForTAC(callContext.method)
             )
         }
     }
@@ -127,7 +131,8 @@ class SystemPropertiesAnalysisScheduler private[analyses] (
 
 object SystemPropertiesAnalysisScheduler extends BasicFPCFTriggeredAnalysisScheduler {
 
-    override def requiredProjectInformation: ProjectInformationKeys = Seq(DeclaredMethodsKey)
+    override def requiredProjectInformation: ProjectInformationKeys =
+        Seq(DeclaredMethodsKey) ++ CallGraphKey.typeProvider.requiredProjectInformationKeys
 
     override def uses: Set[PropertyBounds] = Set(
         PropertyBounds.ub(Callers),
@@ -139,7 +144,7 @@ object SystemPropertiesAnalysisScheduler extends BasicFPCFTriggeredAnalysisSched
     override def register(
         p: SomeProject, ps: PropertyStore, unused: Null
     ): SystemPropertiesAnalysisScheduler = {
-        val analysis = new SystemPropertiesAnalysisScheduler(p)
+        val analysis = new SystemPropertiesAnalysisScheduler(p, CallGraphKey.typeProvider)
         ps.registerTriggeredComputation(triggeredBy, analysis.analyze)
         analysis
     }

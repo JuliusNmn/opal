@@ -29,9 +29,10 @@ import org.opalj.br.fpcf.FPCFAnalysisScheduler
 import org.opalj.ai.ValueOrigin
 import org.opalj.tac.common.DefinitionSitesKey
 import org.opalj.tac.fpcf.properties.TACAI
+import org.opalj.tac.fpcf.properties.cg.Context
 
 class SimpleEscapeAnalysisContext(
-        val entity:                  Entity,
+        val entity:                  (Context, Entity),
         val defSitePC:               ValueOrigin,
         val targetMethod:            Method,
         val declaredMethods:         DeclaredMethods,
@@ -62,9 +63,9 @@ class SimpleEscapeAnalysis( final val project: SomeProject)
     override type AnalysisState = AbstractEscapeAnalysisState
 
     override def determineEscapeOfFP(
-        fp: VirtualFormalParameter
+        fp: (Context, VirtualFormalParameter)
     ): ProperPropertyComputationResult = {
-        fp match {
+        fp._2 match {
             case VirtualFormalParameter(dm: DefinedMethod, _) if dm.definedMethod.body.isEmpty ⇒
                 Result(fp, AtMost(NoEscape))
             case VirtualFormalParameter(dm: DefinedMethod, -1) if dm.definedMethod.isInitializer ⇒
@@ -76,7 +77,7 @@ class SimpleEscapeAnalysis( final val project: SomeProject)
     }
 
     override def createContext(
-        entity:       Entity,
+        entity:       (Context, Entity),
         defSite:      ValueOrigin,
         targetMethod: Method
     ): SimpleEscapeAnalysisContext = new SimpleEscapeAnalysisContext(

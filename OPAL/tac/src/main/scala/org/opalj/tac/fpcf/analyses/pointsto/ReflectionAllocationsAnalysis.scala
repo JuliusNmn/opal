@@ -19,11 +19,13 @@ import org.opalj.br.analyses.ProjectInformationKeys
 import org.opalj.br.analyses.VirtualFormalParametersKey
 import org.opalj.br.fpcf.properties.pointsto.PointsToSetLike
 import org.opalj.br.fpcf.BasicFPCFEagerAnalysisScheduler
-import org.opalj.br.fpcf.properties.cg.Callers
+import org.opalj.tac.fpcf.properties.cg.Callers
 import org.opalj.br.fpcf.FPCFAnalysis
 import org.opalj.br.fpcf.properties.pointsto.AllocationSitePointsToSet
+import org.opalj.tac.cg.CallGraphKey
 import org.opalj.tac.common.DefinitionSitesKey
 import org.opalj.tac.fpcf.analyses.APIBasedAnalysis
+import org.opalj.tac.fpcf.analyses.cg.TypeProvider
 
 /**
  * Introduces additional allocation sites for reflection methods.
@@ -31,7 +33,8 @@ import org.opalj.tac.fpcf.analyses.APIBasedAnalysis
  * @author Dominik Helm
  */
 class ReflectionAllocationsAnalysis private[analyses] (
-        final val project: SomeProject
+        final val project:      SomeProject,
+        final val typeProvider: TypeProvider
 ) extends FPCFAnalysis {
 
     val declaredMethods: DeclaredMethods = project.get(DeclaredMethodsKey)
@@ -40,6 +43,7 @@ class ReflectionAllocationsAnalysis private[analyses] (
         val analyses: List[APIBasedAnalysis] = List(
             new ReflectionMethodAllocationsAnalysis(
                 project,
+                typeProvider,
                 declaredMethods(
                     ObjectType.Class,
                     "",
@@ -50,6 +54,7 @@ class ReflectionAllocationsAnalysis private[analyses] (
             ),
             new ReflectionMethodAllocationsAnalysis(
                 project,
+                typeProvider,
                 declaredMethods(
                     ObjectType.Class,
                     "",
@@ -63,6 +68,7 @@ class ReflectionAllocationsAnalysis private[analyses] (
             ),
             new ReflectionMethodAllocationsAnalysis(
                 project,
+                typeProvider,
                 declaredMethods(
                     ObjectType.Class,
                     "",
@@ -76,6 +82,7 @@ class ReflectionAllocationsAnalysis private[analyses] (
             ),
             new ReflectionMethodAllocationsAnalysis(
                 project,
+                typeProvider,
                 declaredMethods(
                     ObjectType.Class, "", ObjectType.Class,
                     "getConstructor",
@@ -84,6 +91,7 @@ class ReflectionAllocationsAnalysis private[analyses] (
             ),
             new ReflectionMethodAllocationsAnalysis(
                 project,
+                typeProvider,
                 declaredMethods(
                     ObjectType.Class, "", ObjectType.Class,
                     "getDeclaredConstructor",
@@ -92,6 +100,7 @@ class ReflectionAllocationsAnalysis private[analyses] (
             ),
             new ReflectionMethodAllocationsAnalysis(
                 project,
+                typeProvider,
                 declaredMethods(
                     ObjectType.Class, "", ObjectType.Class,
                     "getMethod",
@@ -100,6 +109,7 @@ class ReflectionAllocationsAnalysis private[analyses] (
             ),
             new ReflectionMethodAllocationsAnalysis(
                 project,
+                typeProvider,
                 declaredMethods(
                     ObjectType.Class, "", ObjectType.Class,
                     "getDeclaredMethod",
@@ -113,25 +123,27 @@ class ReflectionAllocationsAnalysis private[analyses] (
 }
 
 class ReflectionMethodAllocationsAnalysis(
-        final val project:            SomeProject,
-        final override val apiMethod: DeclaredMethod
+        final val project:                        SomeProject,
+        final override implicit val typeProvider: TypeProvider,
+        final override val apiMethod:             DeclaredMethod
 ) extends PointsToAnalysisBase with AllocationSiteBasedAnalysis with APIBasedAnalysis {
 
     override def handleNewCaller(
-        callContext: ContextType,
-        pc:          Int,
-        isDirect:    Boolean
+        calleeContext: ContextType,
+        callerContext: ContextType,
+        pc:            Int,
+        isDirect:      Boolean
     ): ProperPropertyComputationResult = {
 
-        val state: State =
-            new PointsToAnalysisState[ElementType, PointsToSet, ContextType](callContext, null)
+        implicit val state: State =
+            new PointsToAnalysisState[ElementType, PointsToSet, ContextType](callerContext, null)
 
-        val defSite = definitionSites(callContext.method.definedMethod, pc)
+        val defSite = getDefSite(pc)
         state.includeSharedPointsToSet(
             defSite,
             createPointsToSet(
                 pc,
-                callContext,
+                callerContext,
                 apiMethod.descriptor.returnType.asReferenceType,
                 isConstant = false
             ),
@@ -144,7 +156,8 @@ class ReflectionMethodAllocationsAnalysis(
 
 object ReflectionAllocationsAnalysisScheduler extends BasicFPCFEagerAnalysisScheduler {
     override def requiredProjectInformation: ProjectInformationKeys =
-        Seq(DeclaredMethodsKey, VirtualFormalParametersKey, DefinitionSitesKey)
+        Seq(DeclaredMethodsKey, VirtualFormalParametersKey, DefinitionSitesKey) ++
+            CallGraphKey.typeProvider.requiredProjectInformationKeys
 
     override def uses: Set[PropertyBounds] = PropertyBounds.ubs(Callers, AllocationSitePointsToSet)
 
@@ -154,7 +167,7 @@ object ReflectionAllocationsAnalysisScheduler extends BasicFPCFEagerAnalysisSche
     override def derivesEagerly: Set[PropertyBounds] = Set.empty
 
     override def start(p: SomeProject, ps: PropertyStore, unused: Null): FPCFAnalysis = {
-        val analysis = new ReflectionAllocationsAnalysis(p)
+        val analysis = new ReflectionAllocationsAnalysis(p, CallGraphKey.typeProvider)
         ps.scheduleEagerComputationForEntity(p)(analysis.process)
         analysis
     }

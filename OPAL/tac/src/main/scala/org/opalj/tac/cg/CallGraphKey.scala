@@ -10,7 +10,6 @@ import scala.collection.JavaConverters._
 import org.opalj.log.LogContext
 import org.opalj.log.OPALLogger.error
 import org.opalj.fpcf.PropertyStore
-import org.opalj.br.analyses.DeclaredMethods
 import org.opalj.br.analyses.DeclaredMethodsKey
 import org.opalj.br.analyses.ProjectInformationKey
 import org.opalj.br.analyses.SomeProject
@@ -45,6 +44,7 @@ trait CallGraphKey extends ProjectInformationKey[CallGraph, Nothing] {
     ): Traversable[FPCFAnalysisScheduler]
 
     override def requirements(project: SomeProject): ProjectInformationKeys = {
+        setupTypeProvider(project)
 
         Seq(
             DeclaredMethodsKey,
@@ -72,7 +72,7 @@ trait CallGraphKey extends ProjectInformationKey[CallGraph, Nothing] {
     override def compute(project: SomeProject): CallGraph = {
         setupTypeProvider(project)
 
-        implicit val declaredMethods: DeclaredMethods = project.get(DeclaredMethodsKey)
+        implicit val typeProvider: TypeProvider = CallGraphKey._typeProvider.get
         implicit val ps: PropertyStore = project.get(PropertyStoreKey)
 
         val manager = project.get(FPCFAnalysesManagerKey)
@@ -89,7 +89,9 @@ trait CallGraphKey extends ProjectInformationKey[CallGraph, Nothing] {
 
         manager.runAll(analyses)
 
-        new CallGraph()
+        val cg = new CallGraph()
+        CallGraphKey._callGraph = Some(cg)
+        cg
     }
 
     private[this] def resolveAnalysisRunner(
@@ -126,8 +128,15 @@ trait CallGraphKey extends ProjectInformationKey[CallGraph, Nothing] {
     }
 }
 
-object CallGraphKey {
+object CallGraphKey extends ProjectInformationKey[CallGraph, Nothing] {
+    private var _callGraph: Option[CallGraph] = None
     private var _typeProvider: Option[TypeProvider] = None
+
+    override def requirements(project: SomeProject): ProjectInformationKeys = Seq.empty
+
+    override def compute(project: SomeProject): CallGraph = {
+        _callGraph.get
+    }
 
     def typeProvider: TypeProvider = {
         _typeProvider.get
